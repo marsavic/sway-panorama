@@ -2,6 +2,12 @@
 name = "sway-panorama"
 version = "0.1.0"
 edition = "2024"
+description = "A live overview of Sway workspaces in one Wayland window"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/marsavic/sway-panorama"
+keywords = ["sway", "wayland", "workspace", "overview"]
+categories = ["gui"]
+
 
 [dependencies]
 cosmic-text = "0.19"

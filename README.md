@@ -27,12 +27,16 @@ names (`w`); see `[keys]` below. Toggled states last until the config file chang
 - Content mode needs per-window capture (`ext-foreign-toplevel-image-capture-source-v1`),
   which Sway has since 1.12. With an older Sway, the program prints a message and draws
   windows schematically. Windows on hidden workspaces are captured live as well.
+- libxkbcommon, and to build, its development package (`libxkbcommon-devel` on Fedora,
+  `libxkbcommon-dev` on Debian and Ubuntu).
 
-## Build
+## Install
 
 ```sh
-cargo build --release
+cargo install sway-panorama
 ```
+
+Or, from a clone of the repository: `cargo build --release`.
 
 ## Config
 
@@ -145,3 +149,7 @@ bindsym $mod+Tab [app_id="sway-panorama"] scratchpad show
 ```
 
 While the window is hidden, Sway sends it no frame callbacks, so window capture stops.
+
+## License
+
+MIT or Apache-2.0, at your option.
