@@ -4,6 +4,8 @@ A live overview of Sway workspaces in one Wayland window. Each workspace is draw
 position and scale on an overview plane given in the config file. Windows are drawn
 schematically (title, app icon, color per app) or with their live content.
 
+![Nine workspaces in a 3×3 layout, windows drawn schematically](docs/screenshot.png)
+
 Pointer controls:
 
 - left click on a window or title bar: focus it, switching to its workspace
