@@ -5,16 +5,16 @@ use resvg::usvg;
 use tiny_skia::{Pixmap, PixmapPaint, Transform};
 
 /// App icons, looked up through desktop entries and the icon theme.
-pub struct Icons {
+pub struct IconCache {
     theme: String,
     entries: Option<Vec<DesktopEntry>>,
     paths: HashMap<String, Option<PathBuf>>,
     pixmaps: HashMap<(String, u32), Option<Pixmap>>,
 }
 
-impl Icons {
+impl IconCache {
     pub fn new(theme: Option<String>) -> Self {
-        Icons {
+        IconCache {
             theme: theme.or_else(freedesktop_icons::default_theme_gtk).unwrap_or_else(|| "hicolor".into()),
             entries: None,
             paths: HashMap::new(),

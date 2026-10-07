@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{
-    config::{Config, Placement},
-    sway::{Node, Rect},
-};
+use crate::{config::Config, rect::Rect, sway::Node};
 
 pub struct Overview {
     pub name: String,
@@ -11,8 +8,6 @@ pub struct Overview {
     pub rect: Rect,
     /// The part of `rect` that windows can use; the rest is reserved, for example by a bar.
     pub usable: Rect,
-    /// False for a configured workspace that does not exist.
-    pub exists: bool,
     pub visible: bool,
     pub focused: bool,
     pub urgent: bool,
@@ -21,33 +16,32 @@ pub struct Overview {
     pub layers: Vec<Vec<Element>>,
 }
 
-pub enum Element {
-    Bar(Bar),
+/// A title bar or a window.
+pub struct Element {
+    /// The sway id of the container.
+    pub id: i64,
+    /// The title bar, or the window frame including its borders.
+    pub rect: Rect,
+    /// The tile the element belongs to: a window with its title bar, or a stacked or tabbed
+    /// container with its title bars and the window it shows. The window gap reduces each tile.
+    pub tile: Rect,
+    pub title: String,
+    /// The app of the window; `None` for the title bar of a container of several windows.
+    pub app: Option<String>,
+    /// True if the container has the focus or contains it.
+    pub focused: bool,
+    pub urgent: bool,
+    pub kind: Kind,
+}
+
+pub enum Kind {
+    Bar,
     Window(Window),
 }
 
-pub struct Bar {
-    /// The sway id of the container the bar belongs to.
-    pub id: i64,
-    pub rect: Rect,
-    pub title: String,
-    /// The app of the window the bar belongs to; `None` for a container of several windows.
-    pub app: Option<String>,
-    pub focused: bool,
-    pub urgent: bool,
-}
-
 pub struct Window {
-    /// The sway id of the window's container.
-    pub id: i64,
-    /// The container rect, including borders.
-    pub frame: Rect,
     /// The area of the window content.
     pub content: Rect,
-    pub title: String,
-    pub app: Option<String>,
-    pub focused: bool,
-    pub urgent: bool,
     /// True if sway draws a title bar for the window.
     pub bar: bool,
     pub identifier: Option<String>,
@@ -57,82 +51,73 @@ pub struct Window {
 
 /// Maps layout coordinates of one output to world coordinates of one workspace overview.
 struct Mapping {
-    origin: (f64, f64),
-    place: Placement,
+    output: Rect,
+    place: Rect,
 }
 
 impl Mapping {
     fn map(&self, r: Rect) -> Rect {
-        let s = self.place.scale;
+        let (sx, sy) = (self.place.width / self.output.width, self.place.height / self.output.height);
         Rect {
-            x: self.place.x + (r.x - self.origin.0) * s,
-            y: self.place.y + (r.y - self.origin.1) * s,
-            width: r.width * s,
-            height: r.height * s,
+            x: self.place.x + (r.x - self.output.x) * sx,
+            y: self.place.y + (r.y - self.output.y) * sy,
+            width: r.width * sx,
+            height: r.height * sy,
         }
     }
 }
 
 /// Builds the overviews of the configured workspaces.
-///
-/// `sizes` keeps the last output size of each workspace, used for placeholders.
-pub fn build(tree: &Node, config: &Config, sizes: &mut HashMap<String, (f64, f64)>) -> Vec<Overview> {
-    let outputs: Vec<&Node> = tree.nodes.iter().filter(|o| o.name.as_deref() != Some("__i3")).collect();
-    let default_size = outputs.first().map(|o| (o.rect.width, o.rect.height)).unwrap_or((1920.0, 1080.0));
+pub fn build(tree: &Node, config: &Config) -> Vec<Overview> {
     let mut found = HashMap::new();
-    for output in &outputs {
+    for output in tree.nodes.iter().filter(|o| o.name.as_deref() != Some("__i3")) {
         for ws in &output.nodes {
             if let Some(name) = &ws.name {
-                found.insert(name.as_str(), (*output, ws));
+                found.insert(name.as_str(), (output, ws));
             }
         }
     }
 
     config
         .workspace
+        .rect
         .iter()
-        .map(|(name, &place)| match found.get(name.as_str()) {
+        .map(|(name, p)| (name, Rect { x: p.x, y: p.y, width: p.w, height: p.h }))
+        .map(|(name, place)| match found.get(name.as_str()) {
             Some(&(output, ws)) => {
-                sizes.insert(name.clone(), (output.rect.width, output.rect.height));
-                let mapping = Mapping { origin: (output.rect.x, output.rect.y), place };
+                let mapping = Mapping { output: output.rect, place };
                 let mut layers = vec![Vec::new()];
                 match find_fullscreen(ws) {
-                    Some(fs) => add(fs, (fs.rect.x, fs.rect.y), 1, true, &mapping, &mut layers[0]),
+                    Some(fs) => add(fs, (fs.rect.x, fs.rect.y), 1, None, true, &mapping, &mut layers[0]),
                     None => {
                         let origin = (ws.rect.x, ws.rect.y);
                         children(ws, origin, true, &mapping, &mut layers[0]);
                         for f in &ws.floating_nodes {
                             let mut layer = Vec::new();
-                            add(f, origin, 1, true, &mapping, &mut layer);
+                            add(f, origin, 1, None, true, &mapping, &mut layer);
                             layers.push(layer);
                         }
                     }
                 }
                 Overview {
                     name: name.clone(),
-                    rect: mapping.map(output.rect),
+                    rect: place,
                     usable: mapping.map(ws.rect),
-                    exists: true,
                     visible: output.focus.first() == Some(&ws.id),
                     focused: contains_focus(ws),
                     urgent: ws.urgent,
                     layers,
                 }
             }
-            None => {
-                let (w, h) = sizes.get(name).copied().unwrap_or(default_size);
-                let rect = Rect { x: place.x, y: place.y, width: w * place.scale, height: h * place.scale };
-                Overview {
-                    name: name.clone(),
-                    rect,
-                    usable: rect,
-                    exists: false,
-                    visible: false,
-                    focused: false,
-                    urgent: false,
-                    layers: vec![Vec::new()],
-                }
-            }
+            None => Overview {
+                name: name.clone(),
+                rect: place,
+                usable: place,
+                visible: false,
+                focused: false,
+                urgent: false,
+                layers: vec![Vec::new()],
+            },
         })
         .collect()
 }
@@ -152,44 +137,62 @@ fn children(node: &Node, origin: (f64, f64), shown: bool, mapping: &Mapping, out
     let stacked = node.layout == "stacked";
     let tabbed = node.layout == "tabbed";
     let count = if stacked { node.nodes.len() } else { 1 };
+    // The title bars of a stacked or tabbed container and the window it shows form one tile.
+    let tile = (stacked || tabbed).then(|| node.nodes.iter().fold(node.rect, |r, c| r.union(&bar_rect(c, origin))));
     for child in &node.nodes {
         let front = !(stacked || tabbed) || node.focus.first() == Some(&child.id);
-        add(child, origin, count, shown && front, mapping, out);
+        add(child, origin, count, tile, shown && front, mapping, out);
     }
+}
+
+/// The layout rect of the title bar of container `c`, whose parent has box origin `origin`.
+fn bar_rect(c: &Node, origin: (f64, f64)) -> Rect {
+    let d = c.deco_rect;
+    Rect { x: origin.0 + d.x, y: origin.1 + d.y, ..d }
 }
 
 /// Adds the title bar, window and descendants of container `c`.
 ///
 /// `parent_origin` is the box origin of the parent, to which sway's `deco_rect` is relative.
 /// `count` is the number of title bars above the content of `c` (siblings in a stacked parent).
-fn add(c: &Node, parent_origin: (f64, f64), count: usize, shown: bool, mapping: &Mapping, out: &mut Vec<Element>) {
+/// `tile` is the tile of the title bar and window of `c` if the parent is stacked or tabbed.
+fn add(
+    c: &Node,
+    parent_origin: (f64, f64),
+    count: usize,
+    tile: Option<Rect>,
+    shown: bool,
+    mapping: &Mapping,
+    out: &mut Vec<Element>,
+) {
     let d = c.deco_rect;
-    let app = c.pid.and(c.app_id.clone().or_else(|| c.window_properties.as_ref()?.class.clone()));
+    let bar = bar_rect(c, parent_origin);
+    let tile = mapping.map(tile.unwrap_or(if d.height > 0.0 { c.rect.union(&bar) } else { c.rect }));
+    let element = |rect, kind| Element {
+        id: c.id,
+        rect: mapping.map(rect),
+        tile,
+        title: c.name.clone().unwrap_or_default(),
+        app: c.pid.and(c.app_id.clone().or_else(|| c.window_properties.as_ref()?.class.clone())),
+        focused: contains_focus(c),
+        urgent: c.urgent,
+        kind,
+    };
     if d.height > 0.0 {
-        out.push(Element::Bar(Bar {
-            id: c.id,
-            rect: mapping.map(Rect { x: parent_origin.0 + d.x, y: parent_origin.1 + d.y, ..d }),
-            title: c.name.clone().unwrap_or_default(),
-            app: app.clone(),
-            focused: contains_focus(c),
-            urgent: c.urgent,
-        }));
+        out.push(element(bar, Kind::Bar));
     }
     if c.pid.is_some() {
         if shown {
             let w = c.window_rect;
-            out.push(Element::Window(Window {
-                id: c.id,
-                frame: mapping.map(c.rect),
-                content: mapping.map(Rect { x: c.rect.x + w.x, y: c.rect.y + w.y, ..w }),
-                title: c.name.clone().unwrap_or_default(),
-                app,
-                focused: c.focused,
-                urgent: c.urgent,
-                bar: d.height > 0.0,
-                identifier: c.foreign_toplevel_identifier.clone(),
-                own: c.pid == Some(std::process::id() as i32),
-            }));
+            out.push(element(
+                c.rect,
+                Kind::Window(Window {
+                    content: mapping.map(Rect { x: c.rect.x + w.x, y: c.rect.y + w.y, ..w }),
+                    bar: d.height > 0.0,
+                    identifier: c.foreign_toplevel_identifier.clone(),
+                    own: c.pid == Some(std::process::id() as i32),
+                }),
+            ));
         }
     } else {
         let origin = (c.rect.x, c.rect.y - d.height * count as f64);

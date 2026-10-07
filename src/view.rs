@@ -1,4 +1,4 @@
-use crate::sway::Rect;
+use crate::rect::Rect;
 
 /// Camera over the overview plane.
 pub struct View {
@@ -25,16 +25,17 @@ impl View {
 
     /// Fits `bounds` into the view if the camera follows the fit.
     ///
-    /// On each side it leaves `margin` plane units less `border` screen pixels, so that with
-    /// `margin` equal to the space between two workspaces, the space outside the outer workspace
-    /// borders equals the space between two workspace borders. It leaves at least `border` screen
-    /// pixels, and above at least `border + label` for the labels.
-    pub fn fit(&mut self, bounds: Rect, margin: f64, border: f64, label: f64) {
+    /// `outside` is the screen width outside the world rect of each workspace, such as its border.
+    /// On each side the fit leaves `margin` plane units less `outside` screen pixels, so that with
+    /// `margin` equal to the space between two workspaces, the space outside the outer workspaces
+    /// equals the space between two workspaces. It leaves at least `outside` screen pixels, and
+    /// above at least `outside + label` for the labels.
+    pub fn fit(&mut self, bounds: Rect, margin: f64, outside: f64, label: f64) {
         if !self.fit || bounds.width <= 0.0 || bounds.height <= 0.0 {
             return;
         }
         let (w, h) = self.size;
-        let (bw, bh, m, b) = (bounds.width, bounds.height, margin, border);
+        let (bw, bh, m, b) = (bounds.width, bounds.height, margin, outside);
         let t = b + label;
         // Each side takes max(m·zoom − b, minimum) pixels; every combination of the two terms
         // bounds the zoom.

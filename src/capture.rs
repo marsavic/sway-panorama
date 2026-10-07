@@ -40,7 +40,7 @@ use wayland_protocols::{
     wp::viewporter::client::{wp_viewport::WpViewport, wp_viewporter::WpViewporter},
 };
 
-use crate::{App, draw::Canvas, sway::Rect};
+use crate::{App, draw::Canvas, rect::Rect};
 
 pub struct Capture {
     copy: CopyManager,
